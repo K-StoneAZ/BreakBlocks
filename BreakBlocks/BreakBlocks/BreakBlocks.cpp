@@ -93,6 +93,7 @@ struct Paddle
 struct Ball
 {
     float x, y, vx, vy, r;
+    float spin = 0.f;
 	int penetrateMax = 0; // max number of bricks it can penetrate
 	int penetrateCount = 0; // number of bricks it can penetrate per hit
 	bool stuck = false;
@@ -112,6 +113,8 @@ struct Brick
 // ============================================================
 
 static Paddle g_paddle;
+static float g_paddleVX = 0.f;
+static float g_paddlePrevX = 0.f;
 static Ball g_ball[BALL_CAP];
 static int g_ballMax = 1; // current number of active balls
 static bool g_ballLaunched = false;
@@ -122,6 +125,7 @@ static int g_score = 0;
 static int g_lives = 3;
 static int g_level = 1;
 static bool g_gameOver = false;
+static bool g_spin = false;
 static bool g_stickyPaddle = false;
 static bool g_invulnerable = false;
 
@@ -184,8 +188,22 @@ void InitBall()
         g_ball[i].penetrateCount = 0;
         g_ball[i].x = g_paddle.x + g_paddle.w * 0.5f;
         g_ball[i].y = g_paddle.y - g_ball[i].r - 1.f;
-        g_ball[i].alive = (i < g_ballMax);  // only the first g_ballMax balls are alive
+        g_ball[i].alive = (i == 0);  // only the first g_ball is alive
+        g_ball[i].stuck = false;
+		g_ball[i].spin = 0.f;
     }
+    g_ballMax = 1;
+    g_ballLaunched = false;
+}
+
+void KillAllBalls()
+{
+    for (int i = 0; i < BALL_CAP; ++i)
+    {
+        g_ball[i].alive = false;
+        g_ball[i].spin = 0.f;
+    }
+    g_ballMax = 1;
 
     g_ballLaunched = false;
 }
@@ -216,6 +234,7 @@ void SetActiveBallCount()
                 g_ball[i] = g_ball[src];
                 g_ball[i].vx = (i & 1) ? g_ball[i].vx : -g_ball[i].vx;
                 g_ball[i].alive = true;
+				g_ball[i].stuck = false;
             }
 			count++;
         }
@@ -251,16 +270,16 @@ LevelDef g_levels[] =
         5, 10,
         {
             {1,1,1,1,1,1,1,1,1,1},
-            {0,2,2,2,2,2,2,2,2,0},
-            {0,0,3,3,3,3,3,3,0,0},
-            {0,0,0,4,4,4,4,0,0,0},
+            {0,1,2,2,2,2,2,2,1,0},
+            {0,0,1,3,3,3,3,1,0,0},
+            {0,0,0,1,4,4,1,0,0,0},
             {0,0,0,0,5,5,0,0,0,0}
         },
         {// defined power-ups in specific bricks
             { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 
             {-1, 0, 0, 0, 0, 0, 0, 0, 0,-1},
-            {-1,-1, 6,-1,-1,-1,-1, 6,-1,-1},
-            {-1,-1,-1, 0, 0, 0, 0,-1,-1,-1},
+            {-1,-1, 6 -1,-1,-1,-1, 6,-1,-1},
+            {-1,-1,-1,11, 0, 0,11,-1,-1,-1},
             {-1,-1,-1,-1, 0, 0,-1,-1,-1,-1}
         },
         0,0
@@ -396,7 +415,7 @@ void EffectBallSmall() {                                                //4
             b.penetrateCount = 0;
         });
 }
-void EffectBallSpin() { /* Not implemented */ }                         //5
+void EffectBallSpin() { g_spin = true; }                         //5
 void EffectMultiBall() { g_ballMax = 3; SetActiveBallCount(); }         //6
 void EffectMultiRare() { g_ballMax = 6; SetActiveBallCount(); }         //7
 void EffectWreakingBall() {                                             //8
@@ -454,7 +473,7 @@ void RevertBallSmall() {
             b.r = BASE_BALL_RADIUS;
         });
 }
-void RevertBallSpin() { /* Not implemented */ }
+void RevertBallSpin() { g_spin = false; }
 void RevertWreakingBall() {
     ForEachAliveBall([](Ball& b)
         {
@@ -468,6 +487,7 @@ void RevertPaddleNarrow() { g_paddle.w /= 0.7f; }
 void RevertSticky()
 {
     g_stickyPaddle = false;
+	bool anyStuck = false;
 
     // Auto-launch any stuck balls
     for (int i = 0; i < g_ballMax; ++i)
@@ -476,12 +496,19 @@ void RevertSticky()
         if (!b.alive || !b.stuck) continue;
 
         b.stuck = false;
-        b.vx = (i & 1) ? BASE_BALL_SPEED : -BASE_BALL_SPEED;
-        b.vy = -BASE_BALL_SPEED;
-    }
 
-    g_ballLaunched = true;
+		//If velocity is zero, give it an initial launch
+        if (b.vx == 0.f && b.vy == 0.f) {
+            b.vx = (i & 1) ? BASE_BALL_SPEED : -BASE_BALL_SPEED;
+            b.vy = -BASE_BALL_SPEED;
+        }
+		anyStuck = true;
+    }
+    if (anyStuck) {
+        g_ballLaunched = true;
+    }
 }
+
 void RevertInvulnerable() { g_invulnerable = false; }
 
 // All power-ups are defined here, in one array
@@ -665,9 +692,11 @@ void UpdateActivePowerUps()
 
 void HandleInput()
 {
+    g_paddlePrevX = g_paddle.x;
     if (GetAsyncKeyState(VK_LEFT)) g_paddle.x -= PADDLE_SPEED;
     if (GetAsyncKeyState(VK_RIGHT)) g_paddle.x += PADDLE_SPEED;
     g_paddle.x = Clamp(g_paddle.x, 0.f, (float)g_backW - g_paddle.w);
+    g_paddleVX = g_paddle.x - g_paddlePrevX;
 }
 
 void HandleLaunchInput()
@@ -683,29 +712,41 @@ void HandleLaunchInput()
 
 void UpdateBall()
 {
-    // Pre-launch: stick all active balls to paddle
-    if (!g_ballLaunched)
+    int aliveCount = 0;
+
+    if (g_ballLaunched)
     {
         for (int i = 0; i < g_ballMax; ++i)
         {
             Ball& b = g_ball[i];
-            if (!b.alive) continue;
-
-            b.x = g_paddle.x + g_paddle.w * 0.5f;
-            b.y = g_paddle.y - b.r - 1.f;
+            if (b.alive && b.stuck)
+            {
+                b.stuck = false;
+                //Force launch direction and velocity
+				b.vx = (i & 1) ? BASE_BALL_SPEED * 0.5f : BASE_BALL_SPEED * 0.7f;
+				b.vy = -BASE_BALL_SPEED;
+            }
         }
-        return;
     }
-
-    int aliveCount = 0;
-    // Update each active ball
     for (int i = 0; i < g_ballMax; ++i)
     {
         Ball& b = g_ball[i];
-        if (!b.alive) { continue; }        
+        if (!b.alive) continue;
 
-        aliveCount++;
-        // Move
+        // --- Sticky paddle hold ---
+        if (b.stuck || !g_ballLaunched)
+        {
+            b.x = g_paddle.x + g_paddle.w * 0.5f;
+            b.y = g_paddle.y - b.r - 1.f;
+            continue; // skip motion
+        }
+
+        // Apply spin curve
+        b.vx += b.spin * 0.02f;
+        // Spin decay
+        b.spin *= 0.995f;
+ 
+        // --- Normal movement ---
         b.x += b.vx;
         b.y += b.vy;
         // Left / Right walls
@@ -729,14 +770,15 @@ void UpdateBall()
         if (b.y - b.r > g_backH)
         {
             b.alive = false;
-            aliveCount--;
+            continue;
         }
+        // Only count balls that are alive and on-screen
+		aliveCount++;
     }
     // If ALL balls are gone ? lose life
-    if (aliveCount == 0)
+    if (aliveCount == 0 && g_ballLaunched)
     {
         g_lives--;
-		g_ballMax = 1; // reset to single ball
 
         if (g_lives <= 0)
         {
@@ -746,6 +788,7 @@ void UpdateBall()
         }
         else
         {
+			KillAllBalls();
             InitBall();       // respawn base balls
             g_ballLaunched = false;
         }
@@ -768,17 +811,13 @@ void HandlePaddleCollision()
         if (!CircleRectIntersect(ball.x, ball.y, ball.r, paddleRect))
             continue;
 
-/*        // Snap ball to top of paddle
-        ball.y = g_paddle.y - ball.r;
-
         // Sticky paddle: stop ball until relaunch
         if (g_stickyPaddle)
         {
-            ball.vx = 0.f;
-            ball.vy = 0.f;
+		    ball.stuck = true;
             g_ballLaunched = false;
             continue;
-        }*/
+        }
         // Calculate hit position (-1 .. 1)
         float hit =
             (ball.x - (g_paddle.x + g_paddle.w * 0.5f)) /
@@ -802,6 +841,12 @@ void HandlePaddleCollision()
 
         ball.vx = sinf(angle) * speed;
         ball.vy = -cosf(angle) * speed;
+
+        if (g_spin)
+        {
+            ball.spin += g_paddleVX * 0.05f;
+            ball.spin = Clamp(ball.spin, -1.f, 1.f);
+        }
     }
 }
 
@@ -896,6 +941,7 @@ void HandleBrickCollisions()
                     else
                     {
                         ball.vy = -ball.vy;
+                        ball.vx += ball.spin * 0.2f;
                         ball.penetrateCount = ball.penetrateMax; // reset penetrate count after reflection
                     }
                 }
@@ -927,6 +973,7 @@ void CheckLevelCompletion()
     {
         g_level++;
         InitBricksForLevel(g_level);
+		KillAllBalls();
         InitBall();
         levelAdvancePending = false;
     }

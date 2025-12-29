@@ -1,4 +1,4 @@
 ﻿  BreakBlocks.cpp
-C:\Users\kston\source\repos\BreakBlocks\BreakBlocks\BreakBlocks.cpp(307,28): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
-C:\Users\kston\source\repos\BreakBlocks\BreakBlocks\BreakBlocks.cpp(307,27): warning C4244: '=': conversion from 'float' to 'int', possible loss of data
+C:\Users\kston\source\repos\BreakBlocks\BreakBlocks\BreakBlocks.cpp(326,28): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data
+C:\Users\kston\source\repos\BreakBlocks\BreakBlocks\BreakBlocks.cpp(326,27): warning C4244: '=': conversion from 'float' to 'int', possible loss of data
   BreakBlocks.vcxproj -> C:\Users\kston\source\repos\BreakBlocks\x64\Debug\BreakBlocks.exe
